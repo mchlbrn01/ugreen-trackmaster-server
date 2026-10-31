@@ -120,7 +120,7 @@ def startup_event():
     conn.close()
 
 # ---------------------------------------------------------
-# FULL BROWSER WEB APPLICATION (HTML / JS / CSS)
+# BROWSER WEB APPLICATION (EXACT ROLE-BASED TABS)
 # ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def serve_browser_app():
@@ -173,92 +173,85 @@ def serve_browser_app():
                     <button class="logout-btn" onclick="logout()">Logout</button>
                 </div>
 
-                <!-- NAVIGATION TABS -->
-                <div class="nav-bar" id="nav-tabs">
-                    <button onclick="switchTab('dashboard')" id="tab-dashboard" class="active">Dashboard</button>
-                    <button onclick="switchTab('sales')" id="tab-sales">Record Sale</button>
-                    <button onclick="switchTab('stock')" id="tab-stock">Stock In/Out</button>
-                    <button onclick="switchTab('products')" id="tab-products">Products & SKU</button>
-                    <button onclick="switchTab('reports')" id="tab-reports">Reports</button>
-                </div>
+                <!-- DYNAMIC NAVIGATION TABS BASED ON ROLE -->
+                <div class="nav-bar" id="nav-tabs"></div>
 
-                <!-- TAB 1: DASHBOARD -->
-                <div id="pane-dashboard" class="pane">
-                    <h2>Dashboard Overview</h2>
-                    <div class="card-grid">
-                        <div class="card">
-                            <h3>Total Products in Masterlist</h3>
-                            <p id="stat-products" style="font-size: 24px; font-weight: bold;">0</p>
-                        </div>
-                        <div class="card">
-                            <h3>Running Sales</h3>
-                            <p id="stat-sales" style="font-size: 24px; font-weight: bold;">₱0.00</p>
-                        </div>
-                    </div>
-                    <div id="admin-dash-extras" class="hidden" style="margin-top: 20px;">
+                <!-- TAB: DASHBOARD / ADMIN OVERVIEW -->
+                <div id="pane-dashboard" class="pane hidden">
+                    <h2 id="dash-title">Dashboard</h2>
+                    <div class="card-grid" id="dash-cards"></div>
+                    <div id="admin-extras" class="hidden" style="margin-top: 20px;">
                         <h3>Store Sales Breakdown</h3>
                         <div id="breakdown-list"></div>
+                        <h3 style="margin-top: 15px;">Set Store Sales Target</h3>
+                        <input type="text" id="target-store" placeholder="Store Name (e.g. Octagon)">
+                        <input type="text" id="target-mall" placeholder="Mall Name (e.g. SM Megamall)">
+                        <input type="number" id="target-amount" placeholder="New Target Amount">
+                        <button onclick="setTarget()">Update Target</button>
                     </div>
-                    <button onclick="loadDashboard()" style="margin-top: 15px;">Refresh Dashboard</button>
+                    <button onclick="loadDashboard()" style="margin-top: 15px;">Refresh Data</button>
                 </div>
 
-                <!-- TAB 2: RECORD SALE -->
+                <!-- TAB: STORE DIRECTORY (ADMIN ONLY) -->
+                <div id="pane-stores" class="pane hidden">
+                    <h2>Master Store Directory</h2>
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table>
+                            <thead>
+                                <tr><th>Code</th><th>Store</th><th>Mall</th><th>Region</th><th>Type</th><th>Dealer</th></tr>
+                            </thead>
+                            <tbody id="stores-table-body"></tbody>
+                        </table>
+                    </div>
+                    <button onclick="loadStores()" style="margin-top: 15px;">Refresh Store List</button>
+                </div>
+
+                <!-- TAB: RECORD SALE (PROMOTER ONLY) -->
                 <div id="pane-sales" class="pane hidden">
                     <h2>Record a Sale</h2>
                     <input type="text" id="sale-sku" placeholder="SKU or Barcode">
                     <input type="number" id="sale-qty" placeholder="Quantity" value="1">
                     <input type="number" id="sale-price" placeholder="Unit Price (₱)" value="0.00">
-                    <button onclick="submitSale()">Submit Sale</button>
+                    <button onclick="submitSale()">Record Sale</button>
                     <p id="sale-msg" style="color: #00A859; text-align: center;"></p>
                 </div>
 
-                <!-- TAB 3: STOCK IN / OUT -->
+                <!-- TAB: STOCK IN / OUT (PROMOTER ONLY) -->
                 <div id="pane-stock" class="pane hidden">
                     <h2>Stock Adjustment (IN / OUT)</h2>
                     <input type="text" id="stock-sku" placeholder="SKU or Barcode">
                     <input type="number" id="stock-qty" placeholder="Quantity" value="1">
                     <div style="display: flex; gap: 10px;">
-                        <button onclick="submitStock('IN')" style="background: #00A859;">Stock IN (+)</button>
-                        <button onclick="submitStock('OUT')" style="background: #d9534f;">Stock OUT (-)</button>
+                        <button onclick="submitStock('IN')" style="background: #00A859;">Save Stock IN (+)</button>
+                        <button onclick="submitStock('OUT')" style="background: #d9534f;">Save Stock OUT (-)</button>
                     </div>
                     <p id="stock-msg" style="color: #00A859; text-align: center;"></p>
                 </div>
 
-                <!-- TAB 4: PRODUCTS & SKU -->
+                <!-- TAB: PRODUCTS & SKU (BOTH) -->
                 <div id="pane-products" class="pane hidden">
                     <h2>Product Masterlist & SKU</h2>
-                    <input type="text" id="product-search" placeholder="Search by SKU, Model, or Description..." oninput="filterProducts()">
+                    <input type="text" id="product-search" placeholder="Search SKU, Model, or Description..." oninput="filterProducts()">
                     <div style="max-height: 400px; overflow-y: auto;">
                         <table>
                             <thead>
-                                <tr>
-                                    <th>SKU</th>
-                                    <th>Model Number</th>
-                                    <th>Description</th>
-                                    <th>Price</th>
-                                    <th>Stock</th>
-                                </tr>
+                                <tr><th>SKU</th><th>Model</th><th>Description</th><th>Price</th><th>Stock</th></tr>
                             </thead>
                             <tbody id="product-table-body"></tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- TAB 5: REPORTS -->
+                <!-- TAB: REPORTS & LOGS (BOTH) -->
                 <div id="pane-reports" class="pane hidden">
-                    <h2>Sales Reports & Logs</h2>
-                    <button onclick="downloadCSV()" style="background: #205493; margin-bottom: 10px;">📥 Export All Sales to CSV</button>
+                    <h2 id="report-title">Sales Reports</h2>
+                    <div id="admin-export-div" class="hidden">
+                        <button onclick="downloadCSV()" style="background: #205493; margin-bottom: 10px;">📥 Export All Sales to CSV</button>
+                    </div>
                     <div style="max-height: 400px; overflow-y: auto;">
                         <table>
                             <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Store</th>
-                                    <th>Product</th>
-                                    <th>Qty</th>
-                                    <th>Total</th>
-                                    <th>Promoter</th>
-                                </tr>
+                                <tr><th>Date</th><th>Store</th><th>Product</th><th>Qty</th><th>Total</th><th>Promoter</th></tr>
                             </thead>
                             <tbody id="reports-table-body"></tbody>
                         </table>
@@ -288,17 +281,40 @@ def serve_browser_app():
                     currentUser = await res.json();
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('app-section').classList.remove('hidden');
-                    document.getElementById('user-welcome').innerText = `Welcome, ${currentUser.full_name}`;
-                    document.getElementById('user-meta').innerText = `Role: ${currentUser.role} | Store: ${currentUser.store_name} (${currentUser.mall_name})`;
                     
-                    if(currentUser.role === 'Administrator') {
-                        document.getElementById('admin-dash-extras').classList.remove('hidden');
-                    }
-                    loadDashboard();
+                    const isAdmin = currentUser.role === 'Administrator';
+                    document.getElementById('user-welcome').innerText = `Welcome, ${currentUser.full_name}`;
+                    document.getElementById('user-meta').innerText = isAdmin ? `Role: Administrator` : `Store: ${currentUser.store_name} | Mall: ${currentUser.mall_name}`;
+
+                    buildTabs(isAdmin);
                     fetchProducts();
                 } else {
                     err.innerText = "Invalid username or password.";
                 }
+            }
+
+            function buildTabs(isAdmin) {
+                let tabsHtml = '';
+                if(isAdmin) {
+                    tabsHtml = `
+                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="active">Admin Overview</button>
+                        <button onclick="switchTab('stores')" id="tab-stores">Store Directory</button>
+                        <button onclick="switchTab('products')" id="tab-products">Products / SKU</button>
+                        <button onclick="switchTab('reports')" id="tab-reports">All Store Sales Logs</button>
+                    `;
+                    document.getElementById('admin-extras').classList.remove('hidden');
+                    document.getElementById('admin-export-div').classList.remove('hidden');
+                } else {
+                    tabsHtml = `
+                        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="active">Dashboard</button>
+                        <button onclick="switchTab('sales')" id="tab-sales">Scan Sales</button>
+                        <button onclick="switchTab('stock')" id="tab-stock">Stock In / Out</button>
+                        <button onclick="switchTab('products')" id="tab-products">Products / SKU</button>
+                        <button onclick="switchTab('reports')" id="tab-reports">Reports</button>
+                    `;
+                }
+                document.getElementById('nav-tabs').innerHTML = tabsHtml;
+                switchTab('dashboard');
             }
 
             function logout() {
@@ -308,36 +324,80 @@ def serve_browser_app():
             }
 
             function switchTab(tabName) {
-                ['dashboard', 'sales', 'stock', 'products', 'reports'].forEach(t => {
-                    document.getElementById(`pane-${t}`).classList.add('hidden');
-                    document.getElementById(`tab-${t}`).classList.remove('active');
+                const tabs = currentUser.role === 'Administrator' ? ['dashboard', 'stores', 'products', 'reports'] : ['dashboard', 'sales', 'stock', 'products', 'reports'];
+                tabs.forEach(t => {
+                    const pane = document.getElementById(`pane-${t}`);
+                    const tabBtn = document.getElementById(`tab-${t}`);
+                    if(pane) pane.classList.add('hidden');
+                    if(tabBtn) tabBtn.classList.remove('active');
                 });
+                
                 document.getElementById(`pane-${tabName}`).classList.remove('hidden');
                 document.getElementById(`tab-${tabName}`).classList.add('active');
 
+                if(tabName === 'dashboard') loadDashboard();
+                if(tabName === 'stores') loadStores();
                 if(tabName === 'reports') loadReports();
             }
 
             async function loadDashboard() {
+                const isAdmin = currentUser.role === 'Administrator';
+                document.getElementById('dash-title').innerText = isAdmin ? "Administrator Central Command" : "Store Performance Overview";
+                
                 const res = await fetch(`/api/dashboard-stats?role=${currentUser.role}&store=${encodeURIComponent(currentUser.store_name)}`);
                 if(res.ok) {
                     const data = await res.json();
-                    document.getElementById('stat-products').innerText = data.products_count;
-                    document.getElementById('stat-sales').innerText = `₱${data.running_sales.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                    let cardsHtml = `
+                        <div class="card"><h3>Total Products in Masterlist</h3><p style="font-size: 24px; font-weight: bold;">${data.products_count}</p></div>
+                        <div class="card"><h3>${isAdmin ? 'Total Company-Wide Sales' : 'Current Running Sales'}</h3><p style="font-size: 24px; font-weight: bold;">₱${data.running_sales.toLocaleString('en-US', {minimumFractionDigits: 2})}</p></div>
+                    `;
+                    if(!isAdmin) {
+                        cardsHtml += `
+                            <div class="card"><h3>Target Sales Goal</h3><p style="font-size: 24px; font-weight: bold;">₱${data.target_amount.toLocaleString('en-US', {minimumFractionDigits: 2})}</p></div>
+                            <div class="card"><h3>Achievement Percentage</h3><p style="font-size: 24px; font-weight: bold;">${data.percentage}%</p></div>
+                        `;
+                    }
+                    document.getElementById('dash-cards').innerHTML = cardsHtml;
 
-                    if(currentUser.role === 'Administrator') {
+                    if(isAdmin) {
                         const ovRes = await fetch('/api/admin-overview');
                         if(ovRes.ok) {
                             const ovData = await ovRes.json();
                             let html = '<table><tr><th>Store</th><th>Sales</th><th>Transactions</th></tr>';
-                            for(const s of ovData.store_sales || []) {
+                            for(const s of (ovData.store_sales || [])) {
                                 html += `<tr><td>${s.store}</td><td>₱${s.total_sales.toLocaleString('en-US', {minimumFractionDigits: 2})}</td><td>${s.tx_count}</td></tr>`;
                             }
                             html += '</table>';
-                            document.getElementById('breakdown-list').innerHTML = html || "No store sales recorded yet.";
+                            document.getElementById('breakdown-list').innerHTML = html || "No store sales yet.";
                         }
                     }
                 }
+            }
+
+            async function loadStores() {
+                const res = await fetch('/api/stores');
+                if(res.ok) {
+                    const stores = await res.json();
+                    let html = '';
+                    for(const s of stores) {
+                        html += `<tr><td>${s.store_code}</td><td>${s.store}</td><td>${s.mall}</td><td>${s.region}</td><td>${s.store_type}</td><td>${s.dealer}</td></tr>`;
+                    }
+                    document.getElementById('stores-table-body').innerHTML = html || '<tr><td colspan="6">No stores found.</td></tr>';
+                }
+            }
+
+            async function setTarget() {
+                const store = document.getElementById('target-store').value.trim();
+                const mall = document.getElementById('target-mall').value.trim();
+                const amount = parseFloat(document.getElementById('target-amount').value);
+                if(!store || !mall || isNaN(amount)) { alert("Enter valid store, mall, and target."); return; }
+
+                const res = await fetch('/api/set-target', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ store: `${store} (${mall})`, target_amount: amount, role: currentUser.role })
+                });
+                if(res.ok) { alert("Target updated!"); loadDashboard(); }
             }
 
             async function fetchProducts() {
@@ -351,13 +411,7 @@ def serve_browser_app():
             function renderProductTable(products) {
                 let html = '';
                 for(const p of products) {
-                    html += `<tr>
-                        <td>${p.sku || ''}</td>
-                        <td>${p.model_number || ''}</td>
-                        <td>${p.name || ''}</td>
-                        <td>₱${p.price.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                        <td>${p.stock}</td>
-                    </tr>`;
+                    html += `<tr><td>${p.sku || ''}</td><td>${p.model_number || ''}</td><td>${p.name || ''}</td><td>₱${p.price.toLocaleString('en-US', {minimumFractionDigits: 2})}</td><td>${p.stock}</td></tr>`;
                 }
                 document.getElementById('product-table-body').innerHTML = html || '<tr><td colspan="5">No products found.</td></tr>';
             }
@@ -378,8 +432,7 @@ def serve_browser_app():
                 const price = parseFloat(document.getElementById('sale-price').value);
                 const msg = document.getElementById('sale-msg');
 
-                if(!sku || isNaN(qty) || isNaN(price)) { msg.style.color="#ff6b6b"; msg.innerText = "Fill out all fields correctly."; return; }
-
+                if(!sku || isNaN(qty) || isNaN(price)) { msg.style.color="#ff6b6b"; msg.innerText = "Fill out all fields."; return; }
                 const p = allProducts.find(item => item.sku === sku || item.barcode === sku);
                 const prodName = p ? p.name : sku;
 
@@ -388,14 +441,8 @@ def serve_browser_app():
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         sale_date: new Date().toISOString().slice(0, 19).replace('T', ' '),
-                        sku: sku,
-                        product_name: prodName,
-                        quantity: qty,
-                        unit_price: price,
-                        total: qty * price,
-                        branch: currentUser.mall_name,
-                        store: currentUser.store_name,
-                        promoter: currentUser.full_name
+                        sku: sku, product_name: prodName, quantity: qty, unit_price: price, total: qty * price,
+                        branch: currentUser.mall_name, store: currentUser.store_name, promoter: currentUser.full_name
                     })
                 });
 
@@ -403,6 +450,7 @@ def serve_browser_app():
                     msg.style.color="#00A859";
                     msg.innerText = "Sale recorded successfully!";
                     document.getElementById('sale-sku').value = '';
+                    fetchProducts();
                 } else {
                     msg.style.color="#ff6b6b";
                     msg.innerText = "Failed to record sale.";
@@ -434,21 +482,21 @@ def serve_browser_app():
             }
 
             async function loadReports() {
-                const res = await fetch('/api/admin-overview');
-                if(res.ok) {
-                    const data = await res.json();
-                    let html = '';
-                    for(const s of (data.all_sales || [])) {
-                        html += `<tr>
-                            <td>${s.sale_date}</td>
-                            <td>${s.store}</td>
-                            <td>${s.product_name}</td>
-                            <td>${s.quantity}</td>
-                            <td>₱${s.total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                            <td>${s.promoter}</td>
-                        </tr>`;
+                const isAdmin = currentUser.role === 'Administrator';
+                if(isAdmin) {
+                    const res = await fetch('/api/admin-overview');
+                    if(res.ok) {
+                        const data = await res.json();
+                        let html = '';
+                        for(const s of (data.all_sales || [])) {
+                            html += `<tr><td>${s.sale_date}</td><td>${s.store}</td><td>${s.product_name}</td><td>${s.quantity}</td><td>₱${s.total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td><td>${s.promoter}</td></tr>`;
+                        }
+                        document.getElementById('reports-table-body').innerHTML = html || '<tr><td colspan="6">No sales logs found.</td></tr>';
                     }
-                    document.getElementById('reports-table-body').innerHTML = html || '<tr><td colspan="6">No sales logs found.</td></tr>';
+                } else {
+                    const res = await fetch('/api/products'); // fallback or promoter-specific logs
+                    // Promoter report view
+                    document.getElementById('reports-table-body').innerHTML = '<tr><td colspan="6">Promoter reports view active.</td></tr>';
                 }
             }
 
@@ -466,10 +514,7 @@ def serve_browser_app():
 @app.post("/api/login")
 def login_user(data: dict):
     conn = get_db()
-    user = conn.execute(
-        "SELECT * FROM users WHERE username=? AND password=?", 
-        (data["username"], data["password"])
-    ).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE username=? AND password=?", (data["username"], data["password"])).fetchone()
     conn.close()
     if user:
         return dict(user)
@@ -479,15 +524,17 @@ def login_user(data: dict):
 def get_dashboard_stats(role: str = "Promoter", store: str = ""):
     conn = get_db()
     prod_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
-    
     if role == "Administrator":
         running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales").fetchone()[0]
         conn.close()
         return {"role": "Administrator", "products_count": prod_count, "running_sales": running_sales}
     else:
         running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales WHERE store=?", (store,)).fetchone()[0]
+        target_row = conn.execute("SELECT target_amount FROM targets WHERE store=? OR store LIKE ?", (store, f"%{store}%")).fetchone()
+        target_amount = target_row["target_amount"] if target_row else 50000.0
+        percentage = (running_sales / target_amount * 100) if target_amount > 0 else 0
         conn.close()
-        return {"role": "Promoter", "products_count": prod_count, "running_sales": running_sales}
+        return {"role": "Promoter", "products_count": prod_count, "running_sales": running_sales, "target_amount": target_amount, "percentage": round(percentage, 2)}
 
 @app.get("/api/admin-overview")
 def get_admin_overview():
@@ -496,6 +543,24 @@ def get_admin_overview():
     all_sales = conn.execute("SELECT sale_date, store, product_name, quantity, total, promoter FROM sales ORDER BY id DESC LIMIT 100").fetchall()
     conn.close()
     return {"store_sales": [dict(r) for r in store_sales], "all_sales": [dict(r) for r in all_sales]}
+
+@app.get("/api/stores")
+def get_stores():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM store_directory ORDER BY store_code").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/api/set-target")
+def set_store_target(data: dict):
+    if data.get("role") != "Administrator":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO targets (store, target_amount) VALUES (?, ?) ON CONFLICT(store) DO UPDATE SET target_amount = ?", 
+                     (data["store"], float(data["target_amount"]), float(data["target_amount"])))
+    conn.close()
+    return {"status": "success"}
 
 @app.get("/api/products")
 def get_products(limit: int = 2000):
@@ -513,7 +578,6 @@ def post_sale(data: dict):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (data["sale_date"], data["sku"], data["product_name"], data["quantity"], data["unit_price"], data["total"], data["branch"], data["store"], data["promoter"])
         )
-        # Deduct stock
         conn.execute("UPDATE products SET stock = stock - ? WHERE sku=? OR barcode=?", (data["quantity"], data["sku"], data["sku"]))
     conn.close()
     return {"status": "success"}
@@ -523,9 +587,7 @@ def stock_adjustment(data: dict):
     conn = get_db()
     sku = data.get("sku")
     qty = int(data.get("quantity", 0))
-    adj_type = data.get("type", "IN")
-    delta = qty if adj_type == "IN" else -qty
-    
+    delta = qty if data.get("type") == "IN" else -qty
     with conn:
         cursor = conn.execute("UPDATE products SET stock = stock + ? WHERE sku=? OR barcode=?", (delta, sku, sku))
         if cursor.rowcount == 0:
@@ -538,12 +600,10 @@ def export_sales_csv():
     conn = get_db()
     sales = conn.execute("SELECT sale_date, store, product_name, quantity, unit_price, total, promoter FROM sales ORDER BY id DESC").fetchall()
     conn.close()
-
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Sale Date", "Store", "Product Name", "Quantity", "Unit Price", "Total", "Promoter"])
     for s in sales:
         writer.writerow([s["sale_date"], s["store"], s["product_name"], s["quantity"], s["unit_price"], s["total"], s["promoter"]])
-    
     output.seek(0)
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=ugreen_sales_report.csv"})
