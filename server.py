@@ -27,7 +27,7 @@ def startup_event():
         mall_name TEXT NOT NULL,
         role TEXT DEFAULT 'Promoter'
     );
-      CREATE TABLE IF NOT EXISTS products (
+    CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         barcode TEXT UNIQUE,
         sku TEXT UNIQUE,
@@ -84,7 +84,7 @@ def startup_event():
     except Exception as e:
         print("Notice: Store List.xlsx not loaded on startup:", e)
 
-    # 2. Preload SKU / Product List with 0 default stock
+    # 2. Preload SKU / Product List with Model Number, Description, and 0 default stock
     try:
         prod_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
         sku_file_xlsx = "SKU List.xlsx"
@@ -96,17 +96,18 @@ def startup_event():
             with conn:
                 for _, row in df_prods.iterrows():
                     conn.execute(
-                        """INSERT OR IGNORE INTO products (sku, barcode, name, price, stock) 
-                           VALUES (?, ?, ?, ?, ?)""",
+                        """INSERT OR IGNORE INTO products (sku, barcode, model_number, name, price, stock) 
+                           VALUES (?, ?, ?, ?, ?, ?)""",
                         (
                             str(row.get('SKU', '')), 
-                            str(row.get('Barcode', row.get('SKU', ''))), 
-                            str(row.get('Name', row.get('Product Name', ''))), 
+                            str(row.get('Barcode', row.get('SKU', ''))),
+                            str(row.get('Model', row.get('Model Number', ''))), 
+                            str(row.get('Description', row.get('Name', ''))), 
                             float(row.get('Price', 0.0)), 
                             int(row.get('Stock', 0))
                         )
                     )
-            print("Successfully preloaded product SKU list with 0 default stock.")
+            print("Successfully preloaded product SKU list with Model & Description.")
     except Exception as e:
         print("Notice: SKU list file not loaded on startup:", e)
 
@@ -531,9 +532,9 @@ def add_store(data: dict):
         conn.close()
 
 @app.get("/api/products")
-def get_products(limit: int = 500, offset: int = 0):
+def get_products(limit: int = 1000, offset: int = 0):
     conn = get_db()
-    rows = conn.execute("SELECT sku, barcode, name, price, stock FROM products ORDER BY name LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+    rows = conn.execute("SELECT sku, barcode, model_number, name, price, stock FROM products ORDER BY name LIMIT ? OFFSET ?", (limit, offset)).fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
