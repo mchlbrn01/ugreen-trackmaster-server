@@ -27,10 +27,11 @@ def startup_event():
         mall_name TEXT NOT NULL,
         role TEXT DEFAULT 'Promoter'
     );
-    CREATE TABLE IF NOT EXISTS products (
+      CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         barcode TEXT UNIQUE,
         sku TEXT UNIQUE,
+        model_number TEXT,
         name TEXT NOT NULL,
         price REAL NOT NULL DEFAULT 0,
         stock INTEGER NOT NULL DEFAULT 0
@@ -60,15 +61,6 @@ def startup_event():
         store TEXT,
         dealer TEXT,
         store_type TEXT
-    );
-    CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        barcode TEXT UNIQUE,
-        sku TEXT UNIQUE,
-        model_number TEXT,
-        name TEXT NOT NULL,
-        price REAL NOT NULL DEFAULT 0,
-        stock INTEGER NOT NULL DEFAULT 0
     );
     """)
     
