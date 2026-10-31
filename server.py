@@ -102,7 +102,7 @@ def startup_event():
                             str(row.get('Barcode', row.get('SKU', ''))), 
                             str(row.get('Name', row.get('Product Name', ''))), 
                             float(row.get('Price', 0.0)), 
-                            int(row.get('Stock', 0))  # Set default stock to 0
+                            int(row.get('Stock', 0))
                         )
                     )
             print("Successfully preloaded product SKU list with 0 default stock.")
@@ -530,9 +530,9 @@ def add_store(data: dict):
         conn.close()
 
 @app.get("/api/products")
-def get_products():
+def get_products(limit: int = 500, offset: int = 0):
     conn = get_db()
-    rows = conn.execute("SELECT sku, barcode, name, price, stock FROM products ORDER BY name").fetchall()
+    rows = conn.execute("SELECT sku, barcode, name, price, stock FROM products ORDER BY name LIMIT ? OFFSET ?", (limit, offset)).fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
