@@ -120,7 +120,7 @@ def startup_event():
     conn.close()
 
 # ---------------------------------------------------------
-# BROWSER WEB APPLICATION (WITH PASSWORD MANAGEMENT)
+# BROWSER WEB APPLICATION (WITH CAMERA SCANNER & AUTO-CLEAR)
 # ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def serve_browser_app():
@@ -131,6 +131,8 @@ def serve_browser_app():
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>UGREEN PH TrackMaster Cloud</title>
+        <!-- Include Html5Qrcode library for phone/web camera scanning -->
+        <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
         <style>
             body { font-family: Arial, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
             .container { max-width: 1000px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
@@ -190,7 +192,7 @@ def serve_browser_app():
                 <p id="fp-err" style="color: #ff6b6b; text-align: center;"></p>
             </div>
 
-            <!-- CHANGE PASSWORD SECTION (MODAL / PANEL) -->
+            <!-- CHANGE PASSWORD SECTION -->
             <div id="change-pass-section" class="hidden" style="margin-bottom: 20px; background: #252525; padding: 15px; border-radius: 6px;">
                 <h3>Change Password</h3>
                 <input type="password" id="cp-old" placeholder="Current Password">
@@ -247,9 +249,11 @@ def serve_browser_app():
                     <button onclick="loadStores()" style="margin-top: 15px;">Refresh Store List</button>
                 </div>
 
-                <!-- TAB: RECORD SALE (PROMOTER) -->
+                <!-- TAB: SCAN SALES (PROMOTER) -->
                 <div id="pane-sales" class="pane hidden">
-                    <h2>Record a Sale</h2>
+                    <h2>Record & Scan Sale</h2>
+                    <div id="reader" style="width: 100%; max-width: 400px; margin: 10px auto;"></div>
+                    <button onclick="startScanner('sale-sku', 'sale-price')" style="background: #205493;">📷 Start Camera Scanner</button>
                     <input type="text" id="sale-sku" placeholder="SKU or Barcode">
                     <input type="number" id="sale-qty" placeholder="Quantity" value="1">
                     <input type="number" id="sale-price" placeholder="Unit Price (₱)" value="0.00">
@@ -260,6 +264,8 @@ def serve_browser_app():
                 <!-- TAB: STOCK IN / OUT (PROMOTER) -->
                 <div id="pane-stock" class="pane hidden">
                     <h2>Stock Adjustment (IN / OUT)</h2>
+                    <div id="reader-stock" style="width: 100%; max-width: 400px; margin: 10px auto;"></div>
+                    <button onclick="startScanner('stock-sku')" style="background: #205493;">📷 Start Camera Scanner</button>
                     <input type="text" id="stock-sku" placeholder="SKU or Barcode">
                     <input type="number" id="stock-qty" placeholder="Quantity" value="1">
                     <div style="display: flex; gap: 10px;">
@@ -304,16 +310,49 @@ def serve_browser_app():
         <script>
             let currentUser = null;
             let allProducts = [];
+            let html5QrCode = null;
 
             function showSection(sectionId) {
                 ['login-section', 'register-section', 'forgot-section'].forEach(id => {
                     document.getElementById(id).classList.add('hidden');
                 });
                 document.getElementById(sectionId).classList.remove('hidden');
+                clearInputs(sectionId);
+            }
+
+            function clearInputs(containerId) {
+                const container = document.getElementById(containerId);
+                if(container) {
+                    container.querySelectorAll('input').forEach(input => input.value = '');
+                }
             }
 
             function toggleChangePass(show) {
                 document.getElementById('change-pass-section').classList.toggle('hidden', !show);
+                if(!show) clearInputs('change-pass-section');
+            }
+
+            function startScanner(targetFieldId, priceFieldId = null) {
+                const scannerDiv = targetFieldId === 'sale-sku' ? 'reader' : 'reader-stock';
+                if (html5QrCode) {
+                    html5QrCode.stop().catch(() => {});
+                }
+                html5QrCode = new Html5Qrcode(scannerDiv);
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 100 } },
+                    (decodedText, decodedResult) => {
+                        document.getElementById(targetFieldId).value = decodedText;
+                        if(priceFieldId) {
+                            const p = allProducts.find(item => item.sku === decodedText || item.barcode === decodedText);
+                            if(p) document.getElementById(priceFieldId).value = p.price;
+                        }
+                        html5QrCode.stop().catch(() => {});
+                    },
+                    (errorMessage) => {}
+                ).catch(err => {
+                    alert("Unable to access camera. Please check camera permissions.");
+                });
             }
 
             async function registerUser() {
@@ -406,6 +445,7 @@ def serve_browser_app():
                     currentUser = await res.json();
                     document.getElementById('login-section').classList.add('hidden');
                     document.getElementById('app-section').classList.remove('hidden');
+                    clearInputs('login-section');
                     
                     const isAdmin = currentUser.role === 'Administrator';
                     document.getElementById('user-welcome').innerText = `Welcome, ${currentUser.full_name}`;
@@ -444,17 +484,21 @@ def serve_browser_app():
 
             function logout() {
                 currentUser = null;
+                if (html5QrCode) html5QrCode.stop().catch(() => {});
                 document.getElementById('app-section').classList.add('hidden');
-                document.getElementById('login-section').classList.remove('hidden');
                 showSection('login-section');
             }
 
             function switchTab(tabName) {
+                if (html5QrCode) html5QrCode.stop().catch(() => {});
                 const tabs = currentUser.role === 'Administrator' ? ['dashboard', 'stores', 'products', 'reports'] : ['dashboard', 'sales', 'stock', 'products', 'reports'];
                 tabs.forEach(t => {
                     const pane = document.getElementById(`pane-${t}`);
                     const tabBtn = document.getElementById(`tab-${t}`);
-                    if(pane) pane.classList.add('hidden');
+                    if(pane) {
+                        pane.classList.add('hidden');
+                        clearInputs(`pane-${t}`);
+                    }
                     if(tabBtn) tabBtn.classList.remove('active');
                 });
                 
@@ -513,6 +557,10 @@ def serve_browser_app():
             }
 
             async function setTarget() {
+                if (currentUser.role !== 'Administrator') {
+                    alert("Unauthorized: Only administrators can set targets.");
+                    return;
+                }
                 const store = document.getElementById('target-store').value.trim();
                 const mall = document.getElementById('target-mall').value.trim();
                 const amount = parseFloat(document.getElementById('target-amount').value);
@@ -523,7 +571,15 @@ def serve_browser_app():
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ store: `${store} (${mall})`, target_amount: amount, role: currentUser.role })
                 });
-                if(res.ok) { alert("Target updated!"); loadDashboard(); }
+                if(res.ok) { 
+                    alert("Target updated!"); 
+                    document.getElementById('target-store').value = '';
+                    document.getElementById('target-mall').value = '';
+                    document.getElementById('target-amount').value = '';
+                    loadDashboard(); 
+                } else {
+                    alert("Unauthorized or failed to update target.");
+                }
             }
 
             async function fetchProducts() {
@@ -576,6 +632,8 @@ def serve_browser_app():
                     msg.style.color="#00A859";
                     msg.innerText = "Sale recorded successfully!";
                     document.getElementById('sale-sku').value = '';
+                    document.getElementById('sale-qty').value = '1';
+                    document.getElementById('sale-price').value = '0.00';
                     fetchProducts();
                 } else {
                     msg.style.color="#ff6b6b";
@@ -600,6 +658,7 @@ def serve_browser_app():
                     msg.style.color="#00A859";
                     msg.innerText = `Stock ${type} updated successfully!`;
                     document.getElementById('stock-sku').value = '';
+                    document.getElementById('stock-qty').value = '1';
                     fetchProducts();
                 } else {
                     msg.style.color="#ff6b6b";
@@ -711,7 +770,7 @@ def get_stores():
 @app.post("/api/set-target")
 def set_store_target(data: dict):
     if data.get("role") != "Administrator":
-        raise HTTPException(status_code=403, detail="Unauthorized")
+        raise HTTPException(status_code=403, detail="Unauthorized: Only administrators can set targets")
     conn = get_db()
     with conn:
         conn.execute("INSERT INTO targets (store, target_amount) VALUES (?, ?) ON CONFLICT(store) DO UPDATE SET target_amount = ?", 
@@ -755,12 +814,12 @@ def stock_adjustment(data: dict):
 @app.get("/api/export-sales-csv")
 def export_sales_csv():
     conn = get_db()
-    sales = conn.execute("SELECT sale_date, store, product_name, quantity, unit_price, total, promoter FROM sales ORDER BY id DESC").fetchall()
+    sales = conn.execute("SELECT sale_date, store, product_name, quantity, total, promoter FROM sales ORDER BY id DESC").fetchall()
     conn.close()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Sale Date", "Store", "Product Name", "Quantity", "Unit Price", "Total", "Promoter"])
+    writer.writerow(["Sale Date", "Store", "Product Name", "Quantity", "Total", "Promoter"])
     for s in sales:
-        writer.writerow([s["sale_date"], s["store"], s["product_name"], s["quantity"], s["unit_price"], s["total"], s["promoter"]])
+        writer.writerow([s["sale_date"], s["store"], s["product_name"], s["quantity"], s["total"], s["promoter"]])
     output.seek(0)
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=ugreen_sales_report.csv"})
