@@ -83,7 +83,7 @@ def startup_event():
     except Exception as e:
         print("Notice: Store List.xlsx not loaded on startup:", e)
 
-    # 2. Preload SKU / Product List if empty
+    # 2. Preload SKU / Product List with 0 default stock
     try:
         prod_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
         sku_file_xlsx = "SKU List.xlsx"
@@ -97,11 +97,15 @@ def startup_event():
                     conn.execute(
                         """INSERT OR IGNORE INTO products (sku, barcode, name, price, stock) 
                            VALUES (?, ?, ?, ?, ?)""",
-                        (str(row.get('SKU', '')), str(row.get('Barcode', row.get('SKU', ''))), 
-                         str(row.get('Name', row.get('Product Name', ''))), 
-                         float(row.get('Price', 0.0)), int(row.get('Stock', 100)))
+                        (
+                            str(row.get('SKU', '')), 
+                            str(row.get('Barcode', row.get('SKU', ''))), 
+                            str(row.get('Name', row.get('Product Name', ''))), 
+                            float(row.get('Price', 0.0)), 
+                            int(row.get('Stock', 0))  # Set default stock to 0
+                        )
                     )
-            print("Successfully preloaded product SKU list.")
+            print("Successfully preloaded product SKU list with 0 default stock.")
     except Exception as e:
         print("Notice: SKU list file not loaded on startup:", e)
 
