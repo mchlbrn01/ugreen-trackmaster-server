@@ -48,6 +48,15 @@ def startup_event():
         store TEXT UNIQUE,
         target_amount REAL NOT NULL DEFAULT 50000.0
     );
+    CREATE TABLE IF NOT EXISTS store_directory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        region TEXT,
+        distributor TEXT,
+        mall TEXT,
+        store TEXT UNIQUE,
+        dealer TEXT,
+        store_type TEXT
+    );
     """)
     
     admin_exists = conn.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0]
@@ -78,7 +87,7 @@ def serve_browser_app():
         <title>UGREEN PH TrackMaster Cloud</title>
         <style>
             body { font-family: Arial, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
-            .container { max-width: 800px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+            .container { max-width: 900px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
             h1, h2 { color: #00A859; text-align: center; }
             input, select, button { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #333; border-radius: 4px; background: #2c2c2c; color: #fff; box-sizing: border-box; }
             button { background: #00A859; color: white; font-weight: bold; cursor: pointer; border: none; }
@@ -158,6 +167,7 @@ def serve_browser_app():
                     <h3>Change Password</h3>
                     <input type="password" id="cp-old" placeholder="Current Password">
                     <input type="password" id="cp-new" placeholder="New Password">
+                    <input type="password" id="cp-confirm" placeholder="Confirm New Password">
                     <button onclick="changePasswordNet()">Save New Password</button>
                     <button class="alt-btn" onclick="toggleChangePass(false)">Cancel</button>
                     <p id="cp-err" style="color: #ff6b6b; text-align: center;"></p>
@@ -226,9 +236,11 @@ def serve_browser_app():
             async function changePasswordNet() {
                 const oldPass = document.getElementById('cp-old').value.trim();
                 const newPass = document.getElementById('cp-new').value.trim();
+                const confirmPass = document.getElementById('cp-confirm').value.trim();
                 const err = document.getElementById('cp-err');
 
-                if(!oldPass || !newPass) { err.innerText = "Fill out all fields."; return; }
+                if(!oldPass || !newPass || !confirmPass) { err.innerText = "Fill out all fields."; return; }
+                if(newPass !== confirmPass) { err.innerText = "New passwords do not match."; return; }
 
                 const res = await fetch('/api/change-password', {
                     method: 'POST',
@@ -434,6 +446,30 @@ def set_store_target(data: dict):
         )
     conn.close()
     return {"status": "success", "message": f"Target for {store} updated"}
+
+@app.get("/api/stores")
+def get_stores():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM store_directory ORDER BY store").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+@app.post("/api/sync-stores")
+def sync_stores(data: dict):
+    stores = data.get("stores", [])
+    conn = get_db()
+    with conn:
+        for s in stores:
+            conn.execute(
+                """INSERT INTO store_directory (region, distributor, mall, store, dealer, store_type)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(store) DO UPDATE SET 
+                   region=excluded.region, distributor=excluded.distributor, 
+                   mall=excluded.mall, dealer=excluded.dealer, store_type=excluded.store_type""",
+                (s.get("region"), s.get("distributor"), s.get("mall"), s.get("store"), s.get("dealer"), s.get("store_type"))
+            )
+    conn.close()
+    return {"status": "success", "message": f"Synced {len(stores)} stores successfully."}
 
 @app.post("/api/sales")
 def post_sale(data: dict):
