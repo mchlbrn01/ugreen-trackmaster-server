@@ -42,15 +42,26 @@ def startup_event():
         store TEXT,
         promoter TEXT
     );
+    CREATE TABLE IF NOT EXISTS targets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store TEXT UNIQUE,
+        target_amount REAL NOT NULL DEFAULT 50000.0
+    );
     """)
-    # Insert default admin user if none exists
-    admin = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    if admin == 0:
+    
+    # Automatically insert or update the admin account with correct store and mall name
+    admin_exists = conn.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0]
+    if admin_exists == 0:
         conn.execute(
             "INSERT INTO users (username, password, full_name, store_name, mall_name, role) VALUES (?, ?, ?, ?, ?, ?)",
-            ("admin", "ugreen2026", "Administrator", "Ugreen Flagship Kiosk", "SM Mall of Asia", "Administrator")
+            ("admin", "ugreen2026", "Administrator", "Ugreen Philippines", "PH HQ", "Administrator")
         )
-        conn.commit()
+    else:
+        conn.execute(
+            "UPDATE users SET store_name=?, mall_name=? WHERE username='admin'",
+            ("Ugreen Philippines", "PH HQ")
+        )
+    conn.commit()
     conn.close()
 
 @app.post("/api/register")
@@ -72,7 +83,7 @@ def register_user(data: dict):
 def login_user(data: dict):
     conn = get_db()
     user = conn.execute(
-        "SELECT * FROM users WHERE username=? AND password=?",
+        "SELECT * FROM users WHERE username=? AND password=?", 
         (data["username"], data["password"])
     ).fetchone()
     conn.close()
@@ -80,12 +91,30 @@ def login_user(data: dict):
         return dict(user)
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
-@app.get("/api/products")
-def get_products():
+@app.get("/api/dashboard-stats")
+def get_dashboard_stats(store: str = ""):
     conn = get_db()
-    rows = conn.execute("SELECT * FROM products").fetchall()
+    prod_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    total_stock = conn.execute("SELECT COALESCE(SUM(stock),0) FROM products").fetchone()[0]
+    
+    if store:
+        running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales WHERE store=?", (store,)).fetchone()[0]
+        target_row = conn.execute("SELECT target_amount FROM targets WHERE store=?", (store,)).fetchone()
+    else:
+        running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales").fetchone()[0]
+        target_row = None
+
+    target_amount = target_row["target_amount"] if target_row else 50000.0
+    percentage = (running_sales / target_amount * 100) if target_amount > 0 else 0
+
     conn.close()
-    return [dict(r) for r in rows]
+    return {
+        "products_count": prod_count,
+        "total_stock": total_stock,
+        "running_sales": running_sales,
+        "target_amount": target_amount,
+        "percentage": round(percentage, 2)
+    }
 
 @app.post("/api/sales")
 def post_sale(data: dict):
