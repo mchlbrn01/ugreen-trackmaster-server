@@ -86,7 +86,8 @@ def serve_browser_app():
             .hidden { display: none; }
             .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
             .card { background: #252525; padding: 15px; border-radius: 6px; text-align: center; border-left: 4px solid #00A859; }
-            .logout-btn { background: #d9534f; width: auto; padding: 5px 15px; float: right; }
+            .logout-btn { background: #d9534f; width: auto; padding: 5px 15px; float: right; margin-left: 5px; }
+            .alt-btn { background: #333; margin-top: 5px; }
         </style>
     </head>
     <body>
@@ -99,12 +100,24 @@ def serve_browser_app():
                 <input type="text" id="login-user" placeholder="Username / ID">
                 <input type="password" id="login-pass" placeholder="Password">
                 <button onclick="login()">Login</button>
+                <button class="alt-btn" onclick="toggleForgot(true)">Forgot Password?</button>
                 <p id="login-err" style="color: #ff6b6b; text-align: center;"></p>
+            </div>
+
+            <!-- FORGOT PASSWORD SECTION -->
+            <div id="forgot-section" class="hidden">
+                <h2>Reset Password</h2>
+                <input type="text" id="fp-user" placeholder="Enter Username">
+                <input type="password" id="fp-pass" placeholder="Enter New Password">
+                <button onclick="resetPassword()">Update Password</button>
+                <button class="alt-btn" onclick="toggleForgot(false)">Back to Login</button>
+                <p id="fp-err" style="color: #ff6b6b; text-align: center;"></p>
             </div>
 
             <!-- DASHBOARD SECTION -->
             <div id="dashboard-section" class="hidden">
                 <button class="logout-btn" onclick="logout()">Logout</button>
+                <button class="logout-btn" style="background: #205493;" onclick="toggleChangePass(true)">Change Password</button>
                 <h2 id="welcome-title">Dashboard</h2>
                 <p id="user-meta" style="color: #aaa; text-align: center;"></p>
                 
@@ -140,12 +153,31 @@ def serve_browser_app():
                     <button onclick="setTarget()">Update Target</button>
                 </div>
 
+                <!-- CHANGE PASSWORD PANEL -->
+                <div id="change-pass-panel" class="hidden" style="margin-top: 20px; background: #222; padding: 15px; border-radius: 6px;">
+                    <h3>Change Password</h3>
+                    <input type="password" id="cp-old" placeholder="Current Password">
+                    <input type="password" id="cp-new" placeholder="New Password">
+                    <button onclick="changePasswordNet()">Save New Password</button>
+                    <button class="alt-btn" onclick="toggleChangePass(false)">Cancel</button>
+                    <p id="cp-err" style="color: #ff6b6b; text-align: center;"></p>
+                </div>
+
                 <button onclick="loadDashboard()" style="margin-top: 20px;">Refresh Data</button>
             </div>
         </div>
 
         <script>
             let currentUser = null;
+
+            function toggleForgot(show) {
+                document.getElementById('login-section').classList.toggle('hidden', show);
+                document.getElementById('forgot-section').classList.toggle('hidden', !show);
+            }
+
+            function toggleChangePass(show) {
+                document.getElementById('change-pass-panel').classList.toggle('hidden', !show);
+            }
 
             async function login() {
                 const u = document.getElementById('login-user').value.trim();
@@ -167,6 +199,49 @@ def serve_browser_app():
                     loadDashboard();
                 } else {
                     err.innerText = "Invalid username or password.";
+                }
+            }
+
+            async function resetPassword() {
+                const u = document.getElementById('fp-user').value.trim();
+                const p = document.getElementById('fp-pass').value.trim();
+                const err = document.getElementById('fp-err');
+
+                if(!u || !p) { err.innerText = "Fill out all fields."; return; }
+
+                const res = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: u, new_password: p})
+                });
+
+                if(res.ok) {
+                    alert("Password updated successfully!");
+                    toggleForgot(false);
+                } else {
+                    err.innerText = "Failed to update password.";
+                }
+            }
+
+            async function changePasswordNet() {
+                const oldPass = document.getElementById('cp-old').value.trim();
+                const newPass = document.getElementById('cp-new').value.trim();
+                const err = document.getElementById('cp-err');
+
+                if(!oldPass || !newPass) { err.innerText = "Fill out all fields."; return; }
+
+                const res = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: currentUser.username, old_password: oldPass, new_password: newPass})
+                });
+
+                if(res.ok) {
+                    alert("Password changed successfully!");
+                    toggleChangePass(false);
+                } else {
+                    const data = await res.json();
+                    err.innerText = data.detail || "Failed to change password.";
                 }
             }
 
@@ -264,6 +339,24 @@ def login_user(data: dict):
         return dict(user)
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
+@app.post("/api/change-password")
+def change_password(data: dict):
+    username = data.get("username")
+    old_password = data.get("old_password")
+    new_password = data.get("new_password")
+    
+    conn = get_db()
+    if old_password:
+        user = conn.execute("SELECT * FROM users WHERE username=? AND password=?", (username, old_password)).fetchone()
+        if not user:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Incorrect current password")
+            
+    conn.execute("UPDATE users SET password=? WHERE username=?", (new_password, username))
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": "Password updated successfully"}
+
 @app.get("/api/admin-overview")
 def get_admin_overview():
     conn = get_db()
@@ -305,8 +398,6 @@ def get_dashboard_stats(role: str = "Promoter", store: str = ""):
         }
     else:
         running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales WHERE store=?", (store,)).fetchone()[0]
-        
-        # Matches exact store name or partial name inside targets table
         target_row = conn.execute("SELECT target_amount FROM targets WHERE store=? OR store LIKE ?", (store, f"%{store}%")).fetchone()
         
         target_amount = target_row["target_amount"] if target_row else 50000.0
