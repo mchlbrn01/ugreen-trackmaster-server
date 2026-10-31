@@ -120,7 +120,7 @@ def startup_event():
     conn.close()
 
 # ---------------------------------------------------------
-# BROWSER WEB APPLICATION (EXACT ROLE-BASED TABS)
+# BROWSER WEB APPLICATION (WITH PASSWORD MANAGEMENT)
 # ---------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def serve_browser_app():
@@ -147,7 +147,9 @@ def serve_browser_app():
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
             th, td { border: 1px solid #333; padding: 8px; text-align: left; font-size: 14px; }
             th { background: #252525; color: #00A859; }
-            .logout-btn { background: #d9534f; width: auto; padding: 5px 15px; float: right; }
+            .logout-btn { background: #d9534f; width: auto; padding: 5px 15px; }
+            .pass-btn { background: #205493; width: auto; padding: 5px 15px; margin-right: 5px; }
+            .alt-btn { background: #333; }
         </style>
     </head>
     <body>
@@ -160,7 +162,43 @@ def serve_browser_app():
                 <input type="text" id="login-user" placeholder="Username / ID">
                 <input type="password" id="login-pass" placeholder="Password">
                 <button onclick="login()">Login</button>
+                <button class="alt-btn" onclick="showSection('register-section')">Register New Account</button>
+                <button class="alt-btn" onclick="showSection('forgot-section')" style="background: #444;">Forgot Password?</button>
                 <p id="login-err" style="color: #ff6b6b; text-align: center;"></p>
+            </div>
+
+            <!-- REGISTER SECTION -->
+            <div id="register-section" class="hidden">
+                <h2>Register New Account</h2>
+                <input type="text" id="reg-fullname" placeholder="Full Name">
+                <input type="text" id="reg-user" placeholder="Choose Username">
+                <input type="password" id="reg-pass" placeholder="Choose Password">
+                <input type="text" id="reg-store" placeholder="Store Name (e.g. Ugreen Kiosk)">
+                <input type="text" id="reg-mall" placeholder="Mall Name (e.g. SM Megamall)">
+                <button onclick="registerUser()">Register Account</button>
+                <button class="alt-btn" onclick="showSection('login-section')">Back to Login</button>
+                <p id="reg-err" style="color: #ff6b6b; text-align: center;"></p>
+            </div>
+
+            <!-- FORGOT PASSWORD SECTION -->
+            <div id="forgot-section" class="hidden">
+                <h2>Reset Password</h2>
+                <input type="text" id="fp-user" placeholder="Enter Username">
+                <input type="password" id="fp-pass" placeholder="Enter New Password">
+                <button onclick="resetPassword()">Update Password</button>
+                <button class="alt-btn" onclick="showSection('login-section')">Back to Login</button>
+                <p id="fp-err" style="color: #ff6b6b; text-align: center;"></p>
+            </div>
+
+            <!-- CHANGE PASSWORD SECTION (MODAL / PANEL) -->
+            <div id="change-pass-section" class="hidden" style="margin-bottom: 20px; background: #252525; padding: 15px; border-radius: 6px;">
+                <h3>Change Password</h3>
+                <input type="password" id="cp-old" placeholder="Current Password">
+                <input type="password" id="cp-new" placeholder="New Password">
+                <input type="password" id="cp-confirm" placeholder="Confirm New Password">
+                <button onclick="changePassword()">Save New Password</button>
+                <button class="alt-btn" onclick="toggleChangePass(false)">Cancel</button>
+                <p id="cp-err" style="color: #ff6b6b; text-align: center;"></p>
             </div>
 
             <!-- MAIN APP SECTION -->
@@ -170,13 +208,16 @@ def serve_browser_app():
                         <h3 id="user-welcome" style="margin: 0; color: #00A859;">Welcome</h3>
                         <p id="user-meta" style="margin: 5px 0 0 0; color: #aaa; font-size: 13px;"></p>
                     </div>
-                    <button class="logout-btn" onclick="logout()">Logout</button>
+                    <div>
+                        <button class="pass-btn" onclick="toggleChangePass(true)">Change Password</button>
+                        <button class="logout-btn" onclick="logout()">Logout</button>
+                    </div>
                 </div>
 
-                <!-- DYNAMIC NAVIGATION TABS BASED ON ROLE -->
+                <!-- DYNAMIC NAVIGATION TABS -->
                 <div class="nav-bar" id="nav-tabs"></div>
 
-                <!-- TAB: DASHBOARD / ADMIN OVERVIEW -->
+                <!-- TAB: DASHBOARD -->
                 <div id="pane-dashboard" class="pane hidden">
                     <h2 id="dash-title">Dashboard</h2>
                     <div class="card-grid" id="dash-cards"></div>
@@ -192,7 +233,7 @@ def serve_browser_app():
                     <button onclick="loadDashboard()" style="margin-top: 15px;">Refresh Data</button>
                 </div>
 
-                <!-- TAB: STORE DIRECTORY (ADMIN ONLY) -->
+                <!-- TAB: STORE DIRECTORY (ADMIN) -->
                 <div id="pane-stores" class="pane hidden">
                     <h2>Master Store Directory</h2>
                     <div style="max-height: 400px; overflow-y: auto;">
@@ -206,7 +247,7 @@ def serve_browser_app():
                     <button onclick="loadStores()" style="margin-top: 15px;">Refresh Store List</button>
                 </div>
 
-                <!-- TAB: RECORD SALE (PROMOTER ONLY) -->
+                <!-- TAB: RECORD SALE (PROMOTER) -->
                 <div id="pane-sales" class="pane hidden">
                     <h2>Record a Sale</h2>
                     <input type="text" id="sale-sku" placeholder="SKU or Barcode">
@@ -216,7 +257,7 @@ def serve_browser_app():
                     <p id="sale-msg" style="color: #00A859; text-align: center;"></p>
                 </div>
 
-                <!-- TAB: STOCK IN / OUT (PROMOTER ONLY) -->
+                <!-- TAB: STOCK IN / OUT (PROMOTER) -->
                 <div id="pane-stock" class="pane hidden">
                     <h2>Stock Adjustment (IN / OUT)</h2>
                     <input type="text" id="stock-sku" placeholder="SKU or Barcode">
@@ -228,7 +269,7 @@ def serve_browser_app():
                     <p id="stock-msg" style="color: #00A859; text-align: center;"></p>
                 </div>
 
-                <!-- TAB: PRODUCTS & SKU (BOTH) -->
+                <!-- TAB: PRODUCTS & SKU -->
                 <div id="pane-products" class="pane hidden">
                     <h2>Product Masterlist & SKU</h2>
                     <input type="text" id="product-search" placeholder="Search SKU, Model, or Description..." oninput="filterProducts()">
@@ -242,7 +283,7 @@ def serve_browser_app():
                     </div>
                 </div>
 
-                <!-- TAB: REPORTS & LOGS (BOTH) -->
+                <!-- TAB: REPORTS -->
                 <div id="pane-reports" class="pane hidden">
                     <h2 id="report-title">Sales Reports</h2>
                     <div id="admin-export-div" class="hidden">
@@ -263,6 +304,90 @@ def serve_browser_app():
         <script>
             let currentUser = null;
             let allProducts = [];
+
+            function showSection(sectionId) {
+                ['login-section', 'register-section', 'forgot-section'].forEach(id => {
+                    document.getElementById(id).classList.add('hidden');
+                });
+                document.getElementById(sectionId).classList.remove('hidden');
+            }
+
+            function toggleChangePass(show) {
+                document.getElementById('change-pass-section').classList.toggle('hidden', !show);
+            }
+
+            async function registerUser() {
+                const fullname = document.getElementById('reg-fullname').value.trim();
+                const username = document.getElementById('reg-user').value.trim();
+                const password = document.getElementById('reg-pass').value.trim();
+                const store = document.getElementById('reg-store').value.trim();
+                const mall = document.getElementById('reg-mall').value.trim();
+                const err = document.getElementById('reg-err');
+
+                if(!fullname || !username || !password || !store || !mall) {
+                    err.innerText = "All fields are required.";
+                    return;
+                }
+
+                const res = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, password, full_name: fullname, store_name: store, mall_name: mall })
+                });
+
+                if(res.ok) {
+                    alert("Registration successful! Please log in.");
+                    showSection('login-section');
+                } else {
+                    const data = await res.json();
+                    err.innerText = data.detail || "Registration failed.";
+                }
+            }
+
+            async function resetPassword() {
+                const username = document.getElementById('fp-user').value.trim();
+                const new_password = document.getElementById('fp-pass').value.trim();
+                const err = document.getElementById('fp-err');
+
+                if(!username || !new_password) { err.innerText = "Fill out all fields."; return; }
+
+                const res = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, new_password })
+                });
+
+                if(res.ok) {
+                    alert("Password updated successfully!");
+                    showSection('login-section');
+                } else {
+                    err.innerText = "Failed to update password.";
+                }
+            }
+
+            async function changePassword() {
+                const old_password = document.getElementById('cp-old').value.trim();
+                const new_password = document.getElementById('cp-new').value.trim();
+                const confirm_pass = document.getElementById('cp-confirm').value.trim();
+                const err = document.getElementById('cp-err');
+
+                if(!old_password || !new_password || !confirm_pass) { err.innerText = "Fill out all fields."; return; }
+                if(new_password !== confirm_pass) { err.innerText = "New passwords do not match."; return; }
+
+                const res = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username: currentUser.username, old_password, new_password })
+                });
+
+                if(res.ok) {
+                    alert("Password changed successfully!");
+                    toggleChangePass(false);
+                } else {
+                    const data = await res.json();
+                    err.innerText = data.detail || "Incorrect current password.";
+                }
+            }
 
             async function login() {
                 const u = document.getElementById('login-user').value.trim();
@@ -321,6 +446,7 @@ def serve_browser_app():
                 currentUser = null;
                 document.getElementById('app-section').classList.add('hidden');
                 document.getElementById('login-section').classList.remove('hidden');
+                showSection('login-section');
             }
 
             function switchTab(tabName) {
@@ -494,8 +620,6 @@ def serve_browser_app():
                         document.getElementById('reports-table-body').innerHTML = html || '<tr><td colspan="6">No sales logs found.</td></tr>';
                     }
                 } else {
-                    const res = await fetch('/api/products'); // fallback or promoter-specific logs
-                    // Promoter report view
                     document.getElementById('reports-table-body').innerHTML = '<tr><td colspan="6">Promoter reports view active.</td></tr>';
                 }
             }
@@ -511,6 +635,21 @@ def serve_browser_app():
 # ---------------------------------------------------------
 # API ENDPOINTS
 # ---------------------------------------------------------
+@app.post("/api/register")
+def register_user(data: dict):
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (username, password, full_name, store_name, mall_name, role) VALUES (?, ?, ?, ?, ?, ?)",
+            (data["username"], data["password"], data["full_name"], data["store_name"], data["mall_name"], "Promoter")
+        )
+        conn.commit()
+        return {"status": "success"}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    finally:
+        conn.close()
+
 @app.post("/api/login")
 def login_user(data: dict):
     conn = get_db()
@@ -519,6 +658,24 @@ def login_user(data: dict):
     if user:
         return dict(user)
     raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.post("/api/change-password")
+def change_password(data: dict):
+    username = data.get("username")
+    old_password = data.get("old_password")
+    new_password = data.get("new_password")
+    
+    conn = get_db()
+    if old_password:
+        user = conn.execute("SELECT * FROM users WHERE username=? AND password=?", (username, old_password)).fetchone()
+        if not user:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Incorrect current password")
+            
+    conn.execute("UPDATE users SET password=? WHERE username=?", (new_password, username))
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": "Password updated successfully"}
 
 @app.get("/api/dashboard-stats")
 def get_dashboard_stats(role: str = "Promoter", store: str = ""):
