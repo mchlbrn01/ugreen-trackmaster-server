@@ -49,7 +49,6 @@ def startup_event():
     );
     """)
     
-    # Automatically insert or update the admin account with correct store and mall name
     admin_exists = conn.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0]
     if admin_exists == 0:
         conn.execute(
@@ -58,8 +57,8 @@ def startup_event():
         )
     else:
         conn.execute(
-            "UPDATE users SET store_name=?, mall_name=? WHERE username='admin'",
-            ("Ugreen Philippines", "PH HQ")
+            "UPDATE users SET store_name=?, mall_name=?, role=? WHERE username='admin'",
+            ("Ugreen Philippines", "PH HQ", "Administrator")
         )
     conn.commit()
     conn.close()
@@ -92,35 +91,55 @@ def login_user(data: dict):
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.get("/api/dashboard-stats")
-def get_dashboard_stats(store: str = ""):
+def get_dashboard_stats(role: str = "Promoter", store: str = ""):
     conn = get_db()
     prod_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
     total_stock = conn.execute("SELECT COALESCE(SUM(stock),0) FROM products").fetchone()[0]
     
-    if store:
+    if role == "Administrator":
+        # Admin gets total company sales and per-store breakdown
+        running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales").fetchone()[0]
+        store_sales_rows = conn.execute(
+            "SELECT store, COALESCE(SUM(total),0) as total_sales FROM sales GROUP BY store"
+        ).fetchall()
+        store_breakdown = {row["store"]: row["total_sales"] for row in store_sales_rows}
+        
+        conn.close()
+        return {
+            "role": "Administrator",
+            "products_count": prod_count,
+            "total_stock": total_stock,
+            "running_sales": running_sales,
+            "store_breakdown": store_breakdown,
+            "target_amount": 0.0,
+            "percentage": 0.0
+        }
+    else:
+        # Promoter gets only their specific store metrics
         running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales WHERE store=?", (store,)).fetchone()[0]
         target_row = conn.execute("SELECT target_amount FROM targets WHERE store=?", (store,)).fetchone()
-    else:
-        running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales").fetchone()[0]
-        target_row = None
+        target_amount = target_row["target_amount"] if target_row else 50000.0
+        percentage = (running_sales / target_amount * 100) if target_amount > 0 else 0
 
-    target_amount = target_row["target_amount"] if target_row else 50000.0
-    percentage = (running_sales / target_amount * 100) if target_amount > 0 else 0
-
-    conn.close()
-    return {
-        "products_count": prod_count,
-        "total_stock": total_stock,
-        "running_sales": running_sales,
-        "target_amount": target_amount,
-        "percentage": round(percentage, 2)
-    }
+        conn.close()
+        return {
+            "role": "Promoter",
+            "products_count": prod_count,
+            "total_stock": total_stock,
+            "running_sales": running_sales,
+            "target_amount": target_amount,
+            "percentage": round(percentage, 2)
+        }
 
 @app.post("/api/set-target")
 def set_store_target(data: dict):
     store = data.get("store")
     target_amount = data.get("target_amount")
+    role = data.get("role", "")
     
+    if role != "Administrator":
+        raise HTTPException(status_code=403, detail="Unauthorized: Only administrators can set targets.")
+        
     if not store or target_amount is None:
         raise HTTPException(status_code=400, detail="Store and target_amount are required")
         
