@@ -116,6 +116,24 @@ def get_dashboard_stats(store: str = ""):
         "percentage": round(percentage, 2)
     }
 
+@app.post("/api/set-target")
+def set_store_target(data: dict):
+    store = data.get("store")
+    target_amount = data.get("target_amount")
+    
+    if not store or target_amount is None:
+        raise HTTPException(status_code=400, detail="Store and target_amount are required")
+        
+    conn = get_db()
+    with conn:
+        conn.execute(
+            """INSERT INTO targets (store, target_amount) VALUES (?, ?)
+               ON CONFLICT(store) DO UPDATE SET target_amount = ?""",
+            (store, float(target_amount), float(target_amount))
+        )
+    conn.close()
+    return {"status": "success", "message": f"Target for {store} updated to ₱{target_amount:,.2f}"}
+
 @app.post("/api/sales")
 def post_sale(data: dict):
     conn = get_db()
