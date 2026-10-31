@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 import sqlite3
+import pandas as pd
+import os
 
 app = FastAPI(title="UGREEN PH TrackMaster Cloud API")
 DB_PATH = "cloud_ugreen.db"
@@ -49,16 +51,37 @@ def startup_event():
         target_amount REAL NOT NULL DEFAULT 50000.0
     );
     CREATE TABLE IF NOT EXISTS store_directory (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        store_code TEXT PRIMARY KEY,
         region TEXT,
         distributor TEXT,
         mall TEXT,
-        store TEXT UNIQUE,
+        store TEXT,
         dealer TEXT,
         store_type TEXT
     );
     """)
     
+    # Preload stores from Store List.xlsx if directory is empty
+    store_count = conn.execute("SELECT COUNT(*) FROM store_directory").fetchone()[0]
+    excel_path = "Store List.xlsx"
+    if store_count == 0 and os.path.exists(excel_path):
+        try:
+            df = pd.read_excel(excel_path, sheet_name=0)
+            with conn:
+                for idx, row in df.iterrows():
+                    s_code = f"UGN-{idx+1:03d}"
+                    conn.execute(
+                        """INSERT OR IGNORE INTO store_directory (store_code, region, distributor, mall, store, dealer, store_type) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (s_code, str(row.get('Region', '')), str(row.get('Distributor', '')), 
+                         str(row.get('Mall', '')), str(row.get('Store', '')), 
+                         str(row.get('Dealer', '')), str(row.get('Store Type', ''))
+                    )
+            print("Successfully preloaded 296 stores with unique store codes.")
+        except Exception as e:
+            print("Error loading Store List.xlsx on startup:", e)
+
+    # Ensure admin account exists
     admin_exists = conn.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0]
     if admin_exists == 0:
         conn.execute(
@@ -450,26 +473,34 @@ def set_store_target(data: dict):
 @app.get("/api/stores")
 def get_stores():
     conn = get_db()
-    rows = conn.execute("SELECT * FROM store_directory ORDER BY store").fetchall()
+    rows = conn.execute("SELECT * FROM store_directory ORDER BY store_code").fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
-@app.post("/api/sync-stores")
-def sync_stores(data: dict):
-    stores = data.get("stores", [])
+@app.post("/api/add-store")
+def add_store(data: dict):
+    role = data.get("role", "")
+    if role != "Administrator":
+        raise HTTPException(status_code=403, detail="Unauthorized: Admin only")
+        
     conn = get_db()
-    with conn:
-        for s in stores:
+    try:
+        # Generate unique store code if not provided
+        count = conn.execute("SELECT COUNT(*) FROM store_directory").fetchone()[0]
+        store_code = data.get("store_code") or f"UGN-{count+1:03d}"
+        
+        with conn:
             conn.execute(
-                """INSERT INTO store_directory (region, distributor, mall, store, dealer, store_type)
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(store) DO UPDATE SET 
-                   region=excluded.region, distributor=excluded.distributor, 
-                   mall=excluded.mall, dealer=excluded.dealer, store_type=excluded.store_type""",
-                (s.get("region"), s.get("distributor"), s.get("mall"), s.get("store"), s.get("dealer"), s.get("store_type"))
+                """INSERT INTO store_directory (store_code, region, distributor, mall, store, dealer, store_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (store_code, data.get("region"), data.get("distributor"), data.get("mall"), 
+                 data.get("store"), data.get("dealer"), data.get("store_type"))
             )
-    conn.close()
-    return {"status": "success", "message": f"Synced {len(stores)} stores successfully."}
+        return {"status": "success", "message": f"Store {store_code} added successfully."}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Store code or store already exists.")
+    finally:
+        conn.close()
 
 @app.post("/api/sales")
 def post_sale(data: dict):
