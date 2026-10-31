@@ -532,7 +532,7 @@ def add_store(data: dict):
         conn.close()
 
 @app.get("/api/products")
-def get_products(limit: int = 1000, offset: int = 0):
+def get_products(limit: int = 1500, offset: int = 0):
     conn = get_db()
     rows = conn.execute("SELECT sku, barcode, model_number, name, price, stock FROM products ORDER BY name LIMIT ? OFFSET ?", (limit, offset)).fetchall()
     conn.close()
