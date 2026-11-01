@@ -3,4 +3,4 @@ uvicorn
 pandas
 openpyxl
 requests
-asyncpg
+psycopg2-binary
