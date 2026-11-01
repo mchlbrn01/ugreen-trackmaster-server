@@ -11,7 +11,7 @@ app = FastAPI(title="UGREEN PH TrackMaster Cloud API")
 
 # Supabase PostgreSQL Connection String
 # NOTE: Replace [YOUR-PASSWORD] below with your actual Supabase database password!
-DATABASE_URL = "postgresql://postgres:ugreenPH%402026@db.trhwopghlupcqqrtjchz.supabase.co:5432/postgres"
+postgresql://postgres:ugreenPH%402026@db.uzrgppjvvkgdwntausgr.supabase.co:5432/postgres
 
 def get_db():
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
