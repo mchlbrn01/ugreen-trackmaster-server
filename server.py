@@ -1,25 +1,29 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import pandas as pd
 import os
 import csv
 import io
 
 app = FastAPI(title="UGREEN PH TrackMaster Cloud API")
-DB_PATH = "cloud_ugreen.db"
+
+# Supabase PostgreSQL Connection String
+# NOTE: Replace [YOUR-PASSWORD] below with your actual Supabase database password!
+DATABASE_URL = "postgresql://postgres:[YOUR-PASSWORD]@db.trhwopghlupcqqrtjchz.supabase.co:5432/postgres"
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return conn
 
 @app.on_event("startup")
 def startup_event():
     conn = get_db()
-    conn.executescript("""
+    cursor = conn.cursor()
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         full_name TEXT NOT NULL,
@@ -28,7 +32,7 @@ def startup_event():
         role TEXT DEFAULT 'Promoter'
     );
     CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         barcode TEXT UNIQUE,
         sku TEXT UNIQUE,
         model_number TEXT,
@@ -37,7 +41,7 @@ def startup_event():
         stock INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS sales (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         sale_date TEXT NOT NULL,
         sku TEXT,
         product_name TEXT NOT NULL,
@@ -49,7 +53,7 @@ def startup_event():
         promoter TEXT
     );
     CREATE TABLE IF NOT EXISTS targets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         store TEXT UNIQUE,
         target_amount REAL NOT NULL DEFAULT 50000.0
     );
@@ -63,60 +67,65 @@ def startup_event():
         store_type TEXT
     );
     """)
+    conn.commit()
     
     # 1. Preload Store List if empty
     try:
-        store_count = conn.execute("SELECT COUNT(*) FROM store_directory").fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM store_directory")
+        store_count = cursor.fetchone()['count']
         excel_path = "Store List.xlsx"
         if store_count == 0 and os.path.exists(excel_path):
             df = pd.read_excel(excel_path, sheet_name=0)
-            with conn:
-                for idx, row in df.iterrows():
-                    s_code = f"UGN-{idx+1:03d}"
-                    conn.execute(
-                        """INSERT OR IGNORE INTO store_directory (store_code, region, distributor, mall, store, dealer, store_type) 
-                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                        (s_code, str(row.get('Region', '')), str(row.get('Distributor', '')), 
-                         str(row.get('Mall', '')), str(row.get('Store', '')), 
-                         str(row.get('Dealer', '')), str(row.get('Store Type', '')))
-                    )
+            for idx, row in df.iterrows():
+                s_code = f"UGN-{idx+1:03d}"
+                cursor.execute(
+                    """INSERT INTO store_directory (store_code, region, distributor, mall, store, dealer, store_type) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (store_code) DO NOTHING""",
+                    (s_code, str(row.get('Region', '')), str(row.get('Distributor', '')), 
+                     str(row.get('Mall', '')), str(row.get('Store', '')), 
+                     str(row.get('Dealer', '')), str(row.get('Store Type', '')))
+                )
+            conn.commit()
     except Exception as e:
         print("Store list preload notice:", e)
 
     # 2. Preload SKU List if empty
     try:
-        prod_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM products")
+        prod_count = cursor.fetchone()['count']
         sku_file_xlsx = "SKU List.xlsx"
         sku_file_csv = "SKU List.csv"
         target_sku_file = sku_file_xlsx if os.path.exists(sku_file_xlsx) else (sku_file_csv if os.path.exists(sku_file_csv) else None)
         
         if prod_count == 0 and target_sku_file:
             df_prods = pd.read_excel(target_sku_file) if target_sku_file.endswith('.xlsx') else pd.read_csv(target_sku_file)
-            with conn:
-                for _, row in df_prods.iterrows():
-                    conn.execute(
-                        """INSERT OR IGNORE INTO products (sku, barcode, model_number, name, price, stock) 
-                           VALUES (?, ?, ?, ?, ?, ?)""",
-                        (
-                            str(row.get('SKU', '')), 
-                            str(row.get('Barcode', row.get('SKU', ''))),
-                            str(row.get('Model', row.get('Model Number', ''))), 
-                            str(row.get('Description', row.get('Name', ''))), 
-                            float(row.get('Price', 0.0)), 
-                            int(row.get('Stock', 0))
-                        )
+            for _, row in df_prods.iterrows():
+                cursor.execute(
+                    """INSERT INTO products (sku, barcode, model_number, name, price, stock) 
+                       VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (sku) DO NOTHING""",
+                    (
+                        str(row.get('SKU', '')), 
+                        str(row.get('Barcode', row.get('SKU', ''))),
+                        str(row.get('Model', row.get('Model Number', ''))), 
+                        str(row.get('Description', row.get('Name', ''))), 
+                        float(row.get('Price', 0.0)), 
+                        int(row.get('Stock', 0))
                     )
+                )
+            conn.commit()
     except Exception as e:
         print("SKU list preload notice:", e)
 
     # Ensure admin account exists
-    admin_exists = conn.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username='admin'")
+    admin_exists = cursor.fetchone()['count']
     if admin_exists == 0:
-        conn.execute(
-            "INSERT INTO users (username, password, full_name, store_name, mall_name, role) VALUES (?, ?, ?, ?, ?, ?)",
+        cursor.execute(
+            "INSERT INTO users (username, password, full_name, store_name, mall_name, role) VALUES (%s, %s, %s, %s, %s, %s)",
             ("admin", "ugreen2026", "Administrator", "Ugreen Philippines", "PH HQ", "Administrator")
         )
-    conn.commit()
+        conn.commit()
+    cursor.close()
     conn.close()
 
 # ---------------------------------------------------------
@@ -131,7 +140,6 @@ def serve_browser_app():
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>UGREEN PH TrackMaster Cloud</title>
-        <!-- Include Html5Qrcode library for phone/web camera scanning -->
         <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
         <style>
             body { font-family: Arial, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
@@ -692,27 +700,33 @@ def serve_browser_app():
     """
 
 # ---------------------------------------------------------
-# API ENDPOINTS
+# API ENDPOINTS (POSTGRESQL ADAPTED)
 # ---------------------------------------------------------
 @app.post("/api/register")
 def register_user(data: dict):
     conn = get_db()
+    cursor = conn.cursor()
     try:
-        conn.execute(
-            "INSERT INTO users (username, password, full_name, store_name, mall_name, role) VALUES (?, ?, ?, ?, ?, ?)",
+        cursor.execute(
+            "INSERT INTO users (username, password, full_name, store_name, mall_name, role) VALUES (%s, %s, %s, %s, %s, %s)",
             (data["username"], data["password"], data["full_name"], data["store_name"], data["mall_name"], "Promoter")
         )
         conn.commit()
         return {"status": "success"}
-    except sqlite3.IntegrityError:
+    except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=400, detail="Username already exists")
     finally:
+        cursor.close()
         conn.close()
 
 @app.post("/api/login")
 def login_user(data: dict):
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE username=? AND password=?", (data["username"], data["password"])).fetchone()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s", (data["username"], data["password"]))
+    user = cursor.fetchone()
+    cursor.close()
     conn.close()
     if user:
         return dict(user)
@@ -725,45 +739,66 @@ def change_password(data: dict):
     new_password = data.get("new_password")
     
     conn = get_db()
+    cursor = conn.cursor()
     if old_password:
-        user = conn.execute("SELECT * FROM users WHERE username=? AND password=?", (username, old_password)).fetchone()
+        cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, old_password))
+        user = cursor.fetchone()
         if not user:
+            cursor.close()
             conn.close()
             raise HTTPException(status_code=400, detail="Incorrect current password")
             
-    conn.execute("UPDATE users SET password=? WHERE username=?", (new_password, username))
+    cursor.execute("UPDATE users SET password=%s WHERE username=%s", (new_password, username))
     conn.commit()
+    cursor.close()
     conn.close()
     return {"status": "success", "message": "Password updated successfully"}
 
 @app.get("/api/dashboard-stats")
 def get_dashboard_stats(role: str = "Promoter", store: str = ""):
     conn = get_db()
-    prod_count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as count FROM products")
+    prod_count = cursor.fetchone()['count']
+    
     if role == "Administrator":
-        running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales").fetchone()[0]
+        cursor.execute("SELECT COALESCE(SUM(total),0) as total FROM sales")
+        running_sales = cursor.fetchone()['total']
+        cursor.close()
         conn.close()
         return {"role": "Administrator", "products_count": prod_count, "running_sales": running_sales}
     else:
-        running_sales = conn.execute("SELECT COALESCE(SUM(total),0) FROM sales WHERE store=?", (store,)).fetchone()[0]
-        target_row = conn.execute("SELECT target_amount FROM targets WHERE store=? OR store LIKE ?", (store, f"%{store}%")).fetchone()
+        cursor.execute("SELECT COALESCE(SUM(total),0) as total FROM sales WHERE store=%s", (store,))
+        running_sales = cursor.fetchone()['total']
+        
+        cursor.execute("SELECT target_amount FROM targets WHERE store=%s OR store LIKE %s", (store, f"%{store}%"))
+        target_row = cursor.fetchone()
         target_amount = target_row["target_amount"] if target_row else 50000.0
         percentage = (running_sales / target_amount * 100) if target_amount > 0 else 0
+        cursor.close()
         conn.close()
         return {"role": "Promoter", "products_count": prod_count, "running_sales": running_sales, "target_amount": target_amount, "percentage": round(percentage, 2)}
 
 @app.get("/api/admin-overview")
 def get_admin_overview():
     conn = get_db()
-    store_sales = conn.execute("SELECT store, COALESCE(SUM(total),0) as total_sales, COUNT(*) as tx_count FROM sales GROUP BY store").fetchall()
-    all_sales = conn.execute("SELECT sale_date, store, product_name, quantity, total, promoter FROM sales ORDER BY id DESC LIMIT 100").fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT store, COALESCE(SUM(total),0) as total_sales, COUNT(*) as tx_count FROM sales GROUP BY store")
+    store_sales = cursor.fetchall()
+    
+    cursor.execute("SELECT sale_date, store, product_name, quantity, total, promoter FROM sales ORDER BY id DESC LIMIT 100")
+    all_sales = cursor.fetchall()
+    cursor.close()
     conn.close()
     return {"store_sales": [dict(r) for r in store_sales], "all_sales": [dict(r) for r in all_sales]}
 
 @app.get("/api/stores")
 def get_stores():
     conn = get_db()
-    rows = conn.execute("SELECT * FROM store_directory ORDER BY store_code").fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM store_directory ORDER BY store_code")
+    rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -772,50 +807,75 @@ def set_store_target(data: dict):
     if data.get("role") != "Administrator":
         raise HTTPException(status_code=403, detail="Unauthorized: Only administrators can set targets")
     conn = get_db()
-    with conn:
-        conn.execute("INSERT INTO targets (store, target_amount) VALUES (?, ?) ON CONFLICT(store) DO UPDATE SET target_amount = ?", 
-                     (data["store"], float(data["target_amount"]), float(data["target_amount"])))
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO targets (store, target_amount) VALUES (%s, %s) 
+        ON CONFLICT (store) DO UPDATE SET target_amount = EXCLUDED.target_amount
+    """, (data["store"], float(data["target_amount"])))
+    conn.commit()
+    cursor.close()
     conn.close()
     return {"status": "success"}
 
 @app.get("/api/products")
 def get_products(limit: int = 2000):
     conn = get_db()
-    rows = conn.execute("SELECT sku, barcode, model_number, name, price, stock FROM products ORDER BY name LIMIT ?", (limit,)).fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sku, barcode, model_number, name, price, stock FROM products ORDER BY name LIMIT %s", (limit,))
+    rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return [dict(r) for r in rows]
 
 @app.post("/api/sales")
 def post_sale(data: dict):
     conn = get_db()
-    with conn:
-        conn.execute(
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
             """INSERT INTO sales (sale_date, sku, product_name, quantity, unit_price, total, branch, store, promoter)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (data["sale_date"], data["sku"], data["product_name"], data["quantity"], data["unit_price"], data["total"], data["branch"], data["store"], data["promoter"])
         )
-        conn.execute("UPDATE products SET stock = stock - ? WHERE sku=? OR barcode=?", (data["quantity"], data["sku"], data["sku"]))
-    conn.close()
+        cursor.execute("UPDATE products SET stock = stock - %s WHERE sku=%s OR barcode=%s", (data["quantity"], data["sku"], data["sku"]))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
     return {"status": "success"}
 
 @app.post("/api/stock-adjustment")
 def stock_adjustment(data: dict):
     conn = get_db()
+    cursor = conn.cursor()
     sku = data.get("sku")
     qty = int(data.get("quantity", 0))
     delta = qty if data.get("type") == "IN" else -qty
-    with conn:
-        cursor = conn.execute("UPDATE products SET stock = stock + ? WHERE sku=? OR barcode=?", (delta, sku, sku))
+    try:
+        cursor.execute("UPDATE products SET stock = stock + %s WHERE sku=%s OR barcode=%s", (delta, sku, sku))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Product not found")
-    conn.close()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
     return {"status": "success"}
 
 @app.get("/api/export-sales-csv")
 def export_sales_csv():
     conn = get_db()
-    sales = conn.execute("SELECT sale_date, store, product_name, quantity, total, promoter FROM sales ORDER BY id DESC").fetchall()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sale_date, store, product_name, quantity, total, promoter FROM sales ORDER BY id DESC")
+    sales = cursor.fetchall()
+    cursor.close()
     conn.close()
+    
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Sale Date", "Store", "Product Name", "Quantity", "Total", "Promoter"])
